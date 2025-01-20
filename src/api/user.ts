@@ -3,36 +3,26 @@ import { handleError, IGetUserAuthInfoRequest } from "../utils/response";
 import { adminAuth, fsdb } from "../firebase/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { AppError } from "../utils/AppError";
+import { currentUser } from "../utils/currentUser";
 
 export default {
   requiresAuthentication: true, 
   get: async (req: IGetUserAuthInfoRequest, res: Response) => {
     try {
-      // Get the Authorization header
-      const authHeader = req.headers.authorization;
+      const user = await currentUser(req);
+      const { uid, email } = user;
 
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Unauthorized: Missing or invalid token." });
-      }
-
-      const token = authHeader.split(" ")[1];
-      // Verify the Firebase ID token using the Admin SDK
-      const decodedToken = await adminAuth.verifyIdToken(token);
-      // Return user information
-      console.log("Decoded token:", decodedToken);
-      // request the associate user in firestore
-      // Fetch token info from Firestore
-      const userDoc = doc(fsdb, "users", decodedToken.uid);
+      const userDoc = doc(fsdb, "users", uid);
       const userSnapshot = await getDoc(userDoc);
 
       if (!userSnapshot.exists()) {
-        throw new AppError(`User with uid "${decodedToken.uid}" not found.`, 404);
+        throw new AppError(`User with uid "${uid}" not found.`, 404);
       }
 
       const userData = userSnapshot.data();
       res.json({
-        uid: decodedToken.uid,
-        email: decodedToken.email,
+        uid,
+        email,
         username: userData.username || "Anonymous",
       });
     } catch (error) {

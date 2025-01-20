@@ -1,12 +1,11 @@
 import { Request, Response } from "express";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { ref, query, limitToLast, get, set } from "firebase/database";
+import { ref, set } from "firebase/database";
 import { rtdb, fsdb } from "../firebase/firebase";
 import { handleError, IGetUserAuthInfoRequest, sendResponse } from "../utils/response";
 import { AppError } from "../utils/AppError";
 import { FirebaseError } from "firebase/app";
 import { getTokenMetadata } from "../utils/SolanaRPC";
-import { token } from "@metaplex-foundation/js";
 
 const fetchTokenData = async (tokenAddress: string) => {
   try {
@@ -20,50 +19,11 @@ const fetchTokenData = async (tokenAddress: string) => {
 
     const tokenData = tokenSnapshot.data();
 
-    // Fetch the last few messages from Realtime Database
-    const messagesRef = ref(rtdb, `chatrooms/${tokenAddress}/messages`);
-    const messagesQuery = query(messagesRef, limitToLast(10));
-
-    let messagesSnapshot;
-    try {
-      messagesSnapshot = await get(messagesQuery);
-    } catch (error) {
-      if (error instanceof FirebaseError && error.code === "permission-denied") {
-        throw new AppError("Permission denied: Unable to fetch chat messages.", 403);
-      }
-      throw error; // Re-throw unexpected errors
-    }
-
-    const userPromises: Promise<any>[] = [];
-    messagesSnapshot.forEach((child) => {
-      const message = child.val();
-      const messageWithId = { id: child.key, ...message };
-
-      // Fetch the user's username from Firestore
-      const userDoc = doc(fsdb, "users", message.uid);
-      const userPromise = getDoc(userDoc).then((userSnapshot) => {
-        if (userSnapshot.exists()) {
-          return {
-            ...messageWithId,
-            username: userSnapshot.data()?.username || "Unknown User",
-          };
-        }
-        return { ...messageWithId, username: "Unknown User" };
-      });
-
-      userPromises.push(userPromise);
-    });
-
-    const enrichedMessages = await Promise.all(userPromises);
-
     return {
-      meta: {
         ticker: tokenData?.ticker,
         name: tokenData?.name,
         address: tokenAddress,
         logoUrl: tokenData?.logoUrl,
-      },
-      messages: enrichedMessages,
     };
   } catch (error) {
     if (error instanceof FirebaseError && error.code === "permission-denied") {

@@ -7,15 +7,23 @@ admin.initializeApp({
 });
 
 export const verifyAuthToken = async (req: IGetUserAuthInfoRequest, res: Response, next: NextFunction): Promise<void> => {
-  const idToken = req.headers.authorization?.split("Bearer ")[1];
+  let jwtToken: string | undefined;
+  if(req.headers.authorization) {
+    jwtToken = req.headers.authorization.split("Bearer ")[1];
+  } else if(req.query.jwt) {
+    jwtToken = req.query.jwt as string;
+  } else {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
 
-  if (!idToken) {
+  if (!jwtToken) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const decodedToken = await admin.auth().verifyIdToken(jwtToken);
     (req).user = decodedToken;
     next();
   } catch (error) {
