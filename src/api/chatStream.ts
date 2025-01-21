@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
 import { ref, onValue } from "firebase/database";
-import { rtdb } from "../firebase/firebase";
+import { fsdb, rtdb } from "../firebase/firebase";
 import { handleError } from "../utils/response";
+import { doc, getDoc } from "firebase/firestore";
+import { currentUser } from "../utils/currentUser";
 
 export default {
   requiresAuthentication: true,
@@ -22,15 +24,34 @@ export default {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
+      const user = await currentUser(req);
+
       const unsubscribe = onValue(
         messagesRef,
-        (snapshot) => {
-          const messages: any[] = [];
-          snapshot.forEach((child) => {
-            messages.push({ id: child.key, ...child.val() });
+        async (messagesSnapshot) => {
+          const messages: Promise<any>[] = [];
+          messagesSnapshot.forEach((child) => {
+            const message = child.val();
+            const messageWithId = { id: child.key, ...message };
+      
+            // Fetch the user's username from Firestore
+            const userDoc = doc(fsdb, "users", message.uid);
+            const userPromise = getDoc(userDoc).then((userSnapshot) => {
+              if (userSnapshot.exists()) {
+                return {
+                  ...messageWithId,
+                  username: userSnapshot.data()?.username || "Unknown User",
+                  self: user.uid === message.uid,
+                };
+              }
+              return { ...messageWithId, username: "Unknown User" };
+            });
+            messages.push(userPromise);
           });
 
-          res.write(`data: ${JSON.stringify(messages.reverse())}\n\n`);
+          const enrichedMessages = await Promise.all(messages);
+
+          res.write(`data: ${JSON.stringify(enrichedMessages)}\n\n`);
         },
         (error) => {
           res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
